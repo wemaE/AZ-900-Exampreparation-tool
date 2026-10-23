@@ -22,7 +22,7 @@ graph TD
     RAG -->|Grounding Chunks| Gemini
     RAG -->|Grounding Chunks| DemoEngine
     
-    subgraph "Knowledge Base (rag/)"
+    subgraph "Knowledge Base (backend/rag/)"
         Doc1["01_official_az900_skills_outline.md<br/>(Official Primary)"]
         Doc2["02_user_supplied_azure_fundamentals_qa.md<br/>(Secondary Notes)"]
         Doc3["03_management_tools_and_cloud_concepts.md<br/>(Secondary Notes)"]

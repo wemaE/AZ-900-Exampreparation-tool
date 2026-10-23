@@ -11,13 +11,17 @@ export const config = {
   nodeEnv: process.env.NODE_ENV || 'development',
   geminiApiKey: process.env.GEMINI_API_KEY || '',
   geminiModel: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
-  frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
+  frontendUrl: process.env.FRONTEND_URL || 'https://az-900-exampreparation-tool-1.onrender.com,http://localhost:5173',
   rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000', 10), // 15 mins
   rateLimitMaxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100', 10),
   ragDocsPath: process.env.RAG_DOCS_PATH
     ? path.resolve(process.env.RAG_DOCS_PATH)
     : fs.existsSync(path.resolve(process.cwd(), 'rag'))
     ? path.resolve(process.cwd(), 'rag')
+    : fs.existsSync(path.resolve(process.cwd(), 'backend/rag'))
+    ? path.resolve(process.cwd(), 'backend/rag')
+    : fs.existsSync(path.resolve(process.cwd(), '../backend/rag'))
+    ? path.resolve(process.cwd(), '../backend/rag')
     : path.resolve(process.cwd(), '../rag')
 };
 

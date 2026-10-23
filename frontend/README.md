@@ -16,3 +16,7 @@ The web client for **AzureAce — AZ-900 AI Study Buddy**. Built with React, Typ
 - `npm run dev`: Start Vite development server at `http://localhost:5173`.
 - `npm run build`: Compile TypeScript and build production bundle into `dist/`.
 - `npm run preview`: Preview the production bundle locally.
+
+## Configuration
+
+- `VITE_API_BASE_URL`: Base URL of the backend API service (e.g. `https://azureace-backend.onrender.com`). If omitted, requests fall back to relative `/api` (matching local Vite dev proxy). The client automatically appends `/api` if not present.
