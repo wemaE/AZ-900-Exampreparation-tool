@@ -32,8 +32,22 @@ async function parseJsonResponse<T>(res: Response, fallbackError: string): Promi
   return data as T;
 }
 
+async function safeFetch(url: string, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, init);
+  } catch (err: unknown) {
+    const rawError = err instanceof Error ? err.message : String(err);
+    if (rawError.toLowerCase().includes('failed to fetch') || rawError.toLowerCase().includes('networkerror')) {
+      throw new Error(
+        `Unable to reach AzureAce backend at ${API_BASE}. If using Render free tier, the backend may be waking up (please wait ~30s and click Retry) or needs to be deployed.`
+      );
+    }
+    throw err;
+  }
+}
+
 export async function fetchHealth(): Promise<HealthStatus> {
-  const res = await fetch(`${API_BASE}/health`);
+  const res = await safeFetch(`${API_BASE}/health`);
   return parseJsonResponse<HealthStatus>(res, 'Health check failed');
 }
 
@@ -49,7 +63,7 @@ export async function sendChatMessage(
   sources: ChatMessage['sources'];
   mode: 'live' | 'demo';
 }> {
-  const res = await fetch(`${API_BASE}/chat`, {
+  const res = await safeFetch(`${API_BASE}/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -64,7 +78,7 @@ export async function sendChatMessage(
 }
 
 export async function fetchQuizQuestion(topic: string, context?: string): Promise<QuizQuestion> {
-  const res = await fetch(`${API_BASE}/quiz`, {
+  const res = await safeFetch(`${API_BASE}/quiz`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -80,7 +94,7 @@ export async function submitQuizAnswer(
   quizId: string,
   selectedOptionIndex: number
 ): Promise<QuizEvaluation> {
-  const res = await fetch(`${API_BASE}/quiz/evaluate`, {
+  const res = await safeFetch(`${API_BASE}/quiz/evaluate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ quizId, selectedOptionIndex })
