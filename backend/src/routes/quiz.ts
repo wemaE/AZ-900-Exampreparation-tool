@@ -29,7 +29,7 @@ function cleanupOldSessions() {
 quizRouter.post('/', async (req: Request, res: Response) => {
   try {
     cleanupOldSessions();
-    const { topic, context } = req.body;
+    const { topic, context } = req.body || {};
 
     const validTopics = ['cloud_concepts', 'architecture_services', 'management_governance', 'exam_logistics'];
     const sanitizedTopic = validTopics.includes(topic) ? topic : 'cloud_concepts';
@@ -66,7 +66,7 @@ quizRouter.post('/', async (req: Request, res: Response) => {
 // POST /api/quiz/evaluate - Evaluates user's answer and reveals explanations
 quizRouter.post('/evaluate', (req: Request, res: Response) => {
   try {
-    const { quizId, selectedOptionIndex } = req.body;
+    const { quizId, selectedOptionIndex } = req.body || {};
 
     if (!quizId || typeof quizId !== 'string') {
       return res.status(400).json({

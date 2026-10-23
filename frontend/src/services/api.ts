@@ -1,13 +1,40 @@
 import { ChatMessage, HealthStatus, QuizEvaluation, QuizQuestion } from '../types.js';
 
-const API_BASE = '/api';
+// In production, VITE_API_BASE_URL points to the deployed Render backend (e.g. https://azureace-backend.onrender.com)
+// Automatically append /api if the base URL does not already include it
+const rawBase = (import.meta.env.VITE_API_BASE_URL || '').trim().replace(/\/+$/, '');
+const API_BASE = rawBase
+  ? (rawBase.endsWith('/api') ? rawBase : `${rawBase}/api`)
+  : '/api';
+
+async function parseJsonResponse<T>(res: Response, fallbackError: string): Promise<T> {
+  const text = await res.text();
+  let data: any = null;
+  if (text && text.trim().length > 0) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = null;
+    }
+  }
+
+  if (!res.ok) {
+    const errorMsg = data && typeof data === 'object' && data.error
+      ? data.error
+      : `${fallbackError} (${res.status})`;
+    throw new Error(errorMsg);
+  }
+
+  if (!data) {
+    throw new Error(`${fallbackError}: Received an empty or non-JSON response from server.`);
+  }
+
+  return data as T;
+}
 
 export async function fetchHealth(): Promise<HealthStatus> {
   const res = await fetch(`${API_BASE}/health`);
-  if (!res.ok) {
-    throw new Error('Health check failed');
-  }
-  return res.json();
+  return parseJsonResponse<HealthStatus>(res, 'Health check failed');
 }
 
 export async function sendChatMessage(
@@ -33,12 +60,7 @@ export async function sendChatMessage(
     })
   });
 
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.error || `Server responded with status ${res.status}`);
-  }
-
-  return res.json();
+  return parseJsonResponse(res, 'Chat request failed');
 }
 
 export async function fetchQuizQuestion(topic: string, context?: string): Promise<QuizQuestion> {
@@ -51,12 +73,7 @@ export async function fetchQuizQuestion(topic: string, context?: string): Promis
     })
   });
 
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.error || 'Failed to generate quiz question');
-  }
-
-  return res.json();
+  return parseJsonResponse<QuizQuestion>(res, 'Failed to generate quiz question');
 }
 
 export async function submitQuizAnswer(
@@ -69,10 +86,5 @@ export async function submitQuizAnswer(
     body: JSON.stringify({ quizId, selectedOptionIndex })
   });
 
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.error || 'Failed to evaluate quiz answer');
-  }
-
-  return res.json();
+  return parseJsonResponse<QuizEvaluation>(res, 'Failed to evaluate quiz answer');
 }

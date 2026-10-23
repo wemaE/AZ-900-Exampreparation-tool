@@ -22,6 +22,8 @@ export interface QuizQuestionData {
   disclaimer: string;
 }
 
+type Intent = 'greeting' | 'thanks' | 'help' | 'clarification' | 'az900';
+
 export class GeminiService {
   private genAI: GoogleGenerativeAI | null = null;
 
@@ -42,7 +44,8 @@ export class GeminiService {
     message: string,
     retrieval: RetrievalResult,
     action?: 'explain' | 'simplify' | 'example' | 'compare' | 'test_me',
-    _history?: Array<{ role: string; content: string }>
+    history?: Array<{ role: string; content: string }>,
+    intent?: Intent
   ): Promise<ChatResponsePayload> {
     if (isLiveMode && this.genAI) {
       try {
@@ -51,14 +54,23 @@ export class GeminiService {
           systemInstruction: SYSTEM_PROMPT
         });
 
+        // Build prior conversation history for the Gemini chat session
+        const geminiHistory = (history || []).map((turn) => ({
+          role: turn.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: turn.content }]
+        }));
+
+        const chat = model.startChat({ history: geminiHistory });
+
         const promptText = buildChatUserPrompt(
           message,
           retrieval.contextText,
           action,
-          retrieval.isLogisticsQuery
+          retrieval.isLogisticsQuery,
+          retrieval.hasGroundedSupport
         );
 
-        const result = await model.generateContent(promptText);
+        const result = await chat.sendMessage(promptText);
         const text = result.response.text();
 
         return {
@@ -66,13 +78,23 @@ export class GeminiService {
           mode: 'live',
           sources: retrieval.sources
         };
-      } catch (err) {
-        console.error('[Gemini] Live API call failed, falling back to demo mode:', err);
+      } catch (err: unknown) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        // Surface quota / rate-limit errors transparently
+        if (errMsg.includes('429') || errMsg.toLowerCase().includes('quota')) {
+          return {
+            answer:
+              '⚠️ **API quota limit reached.** The live Gemini model is temporarily unavailable. Falling back to grounded demo responses. Please retry in a moment.',
+            mode: 'demo',
+            sources: retrieval.sources
+          };
+        }
+        console.error('[Gemini] Live API call failed, falling back to demo mode:', errMsg);
       }
     }
 
     // Demo Mode Response
-    return this.generateDemoResponse(message, retrieval, action);
+    return this.generateDemoResponse(message, retrieval, action, intent);
   }
 
   public async generateQuizQuestion(topic: string, _context?: string): Promise<QuizQuestionData> {
@@ -83,7 +105,7 @@ export class GeminiService {
       cloud_concepts: [
         {
           question:
-            'Under the Azure Shared Responsibility Model, which responsibility is ALWAYS the customer’s responsibility regardless of cloud service model (IaaS, PaaS, or SaaS)?',
+            'Under the Azure Shared Responsibility Model, which responsibility is ALWAYS the customer\'s responsibility regardless of cloud service model (IaaS, PaaS, or SaaS)?',
           options: [
             'Physical datacenter security',
             'Operating system patch management',
@@ -124,7 +146,7 @@ export class GeminiService {
           ],
           correctOptionIndex: 1,
           explanation:
-            'ZRS replicates data synchronously across three separate availability zones within the primary region, safeguarding against datacenter-level failures.',
+            'ZRS replicates data synchronously across three separate Availability Zones in the primary region, safeguarding against datacenter-level failures.',
           misconceptionCorrection:
             'LRS also makes 3 copies, but all 3 copies reside in a single physical facility. ZRS distributes those copies across distinct physical zones with independent power and cooling.'
         },
@@ -188,7 +210,7 @@ export class GeminiService {
           ],
           correctOptionIndex: 1,
           explanation:
-            'Pearson OnVUE strictly prohibits all headphones, earbuds, and headsets. Audio must come through the computer’s built-in speakers and microphone.',
+            'Pearson OnVUE strictly prohibits all headphones, earbuds, and headsets. Audio must come through the computer\'s built-in speakers and microphone.',
           misconceptionCorrection:
             'Candidates often assume wired headphones are acceptable since Bluetooth is disabled. OnVUE bans all forms of headphones to maintain test security.'
         }
@@ -214,10 +236,12 @@ export class GeminiService {
   private generateDemoResponse(
     message: string,
     retrieval: RetrievalResult,
-    action?: 'explain' | 'simplify' | 'example' | 'compare' | 'test_me'
+    action?: 'explain' | 'simplify' | 'example' | 'compare' | 'test_me',
+    _intent?: Intent
   ): ChatResponsePayload {
     const lower = message.toLowerCase();
 
+    // ---- Exam Logistics ----
     if (retrieval.isLogisticsQuery || lower.includes('onvue') || lower.includes('proctor') || lower.includes('webcam') || lower.includes('headphone')) {
       return {
         mode: 'demo',
@@ -228,6 +252,7 @@ export class GeminiService {
       };
     }
 
+    // ---- IaaS / PaaS / SaaS ----
     if (lower.includes('iaas') || lower.includes('paas') || lower.includes('saas') || lower.includes('service model')) {
       if (action === 'simplify') {
         return {
@@ -238,7 +263,6 @@ export class GeminiService {
           sources: retrieval.sources
         };
       }
-
       return {
         mode: 'demo',
         answer: `### ☁️ Cloud Service Models: IaaS vs. PaaS vs. SaaS\n\nUnder Azure Fundamentals, cloud services are categorized by how much control and maintenance you keep versus what Microsoft manages:\n\n1. **IaaS (Infrastructure as a Service)**:\n   - *Examples*: Azure Virtual Machines, Virtual Networks.\n   - *Responsibility*: You manage the OS, middleware, runtime, and apps. Microsoft manages physical servers, storage, and networking.\n\n2. **PaaS (Platform as a Service)**:\n   - *Examples*: Azure App Service, Azure SQL Database.\n   - *Responsibility*: You focus entirely on deploying your applications and configuring user access. Microsoft handles OS patching, scaling, and hardware.\n\n3. **SaaS (Software as a Service)**:\n   - *Examples*: Microsoft 365, Dynamics 365.\n   - *Responsibility*: Fully managed end-user applications accessed via web browsers. You only manage user permissions and your data.`,
@@ -248,6 +272,7 @@ export class GeminiService {
       };
     }
 
+    // ---- Storage Redundancy ----
     if (lower.includes('storage') || lower.includes('lrs') || lower.includes('zrs') || lower.includes('grs') || lower.includes('redundancy')) {
       return {
         mode: 'demo',
@@ -258,12 +283,65 @@ export class GeminiService {
       };
     }
 
-    // Default High-Yield AZ-900 Concept Response
+    // ---- Azure Pricing / Cost ----
+    if (lower.includes('pricing') || lower.includes('cost') || lower.includes('billing') || lower.includes('pay-as-you-go') || lower.includes('capex') || lower.includes('opex')) {
+      return {
+        mode: 'demo',
+        answer: `### 💰 Azure Pricing Models\n\nOne of the biggest advantages of Azure is its flexible cost model:\n\n1. **Pay-As-You-Go (OpEx)**: You pay only for what you use — compute, storage, and bandwidth — on a per-second or per-hour basis. No upfront commitment.\n2. **Reserved Instances**: Commit to 1 or 3 years on specific VM sizes and receive up to **72% discount** vs. pay-as-you-go pricing.\n3. **Azure Hybrid Benefit**: Use existing on-premises Windows Server or SQL Server licences to save up to 40% on Azure VMs.\n4. **Azure Spot VMs**: Access spare compute capacity at up to 90% discount — suitable for interruptible workloads like batch processing.\n\n**CapEx vs OpEx**:\n- **CapEx** (Capital Expenditure): Traditional up-front investment in physical servers and data centers.\n- **OpEx** (Operational Expenditure): Cloud spending — pay as you consume, charged as an operating expense.`,
+        analogy: `Think of Azure pricing like a taxi vs. car ownership: CapEx is buying a car (big upfront cost, you own it), while OpEx is using a taxi app — you pay per ride, scale up during rush hour, and pay nothing when you're not travelling!`,
+        followUp: `If a company wants to run a 24/7 production database workload for the next 2 years at the lowest possible cost, which Azure pricing option would you recommend?`,
+        sources: retrieval.sources
+      };
+    }
+
+    // ---- Shared Responsibility Model ----
+    if (lower.includes('shared responsibility') || lower.includes('responsibility model')) {
+      return {
+        mode: 'demo',
+        answer: `### 🛡️ Azure Shared Responsibility Model\n\nThe Shared Responsibility Model defines which security tasks Microsoft handles and which remain with you:\n\n| Responsibility | On-Premises | IaaS | PaaS | SaaS |\n|---|---|---|---|---|\n| Data & access management | You | **You** | **You** | **You** |\n| Applications | You | You | You | Microsoft |\n| Operating system | You | You | Microsoft | Microsoft |\n| Physical infrastructure | You | Microsoft | Microsoft | Microsoft |\n\n**Always yours (regardless of model)**: Your data, identities, access management, and devices.\n**Always Microsoft's**: Physical datacenters, network hardware, and the host infrastructure.`,
+        analogy: `It's like renting an apartment: the building owner (Microsoft) secures the lobby, lifts, and plumbing. You (the tenant) are responsible for locking your apartment door, safeguarding your valuables, and keeping your guests from causing damage.`,
+        followUp: `Under a SaaS model, which single responsibility can the customer never delegate to Microsoft?`,
+        sources: retrieval.sources
+      };
+    }
+
+    // ---- Azure Regions / Availability Zones ----
+    if (lower.includes('region') || lower.includes('availability zone') || lower.includes('datacenter') || lower.includes('geography')) {
+      return {
+        mode: 'demo',
+        answer: `### 🌍 Azure Regions and Availability Zones\n\n**Azure Region**: A geographic area (e.g., "East US", "UK South") containing one or more physical datacenters connected by a dedicated low-latency network.\n\n**Availability Zone (AZ)**: A physically separate datacenter within a region with its own power, cooling, and networking. Each region with AZ support has at least 3 zones.\n\n**Region Pairs**: Azure pairs each region with another in the same geography (e.g. East US ↔ West US) for disaster recovery. Updates are rolled out to one region at a time.\n\n**Key rules to remember**:\n- Resource Groups do **not** have to be in the same region as their resources.\n- Some services are **global** (Azure AD, Azure DNS) and are not region-specific.\n- Availability Zones protect against **datacenter-level** failure; Regions protect against **regional** disasters.`,
+        analogy: `Think of Azure as a global bank chain: a **Region** is a city branch, **Availability Zones** are separate buildings in that city (so if one building catches fire, the others keep operating), and **Region Pairs** are the bank's backup offices in a different city that activate if the whole city is affected.`,
+        followUp: `If a company wants to ensure their app survives a single datacenter failure without routing traffic to another region, which infrastructure feature should they use?`,
+        sources: retrieval.sources
+      };
+    }
+
+    // ---- Azure Advisor / Governance tools ----
+    if (lower.includes('advisor') || lower.includes('azure policy') || lower.includes('management group') || lower.includes('resource lock') || lower.includes('governance')) {
+      return {
+        mode: 'demo',
+        answer: `### 🏛️ Azure Governance Tools\n\nAzure provides several tools for controlling and managing your cloud environment:\n\n1. **Azure Advisor**: Scans your deployed resources and provides free recommendations across 5 pillars — Cost, Security, Reliability, Operational Excellence, and Performance.\n\n2. **Azure Policy**: Enforce organizational standards at scale. Policies can **audit**, **deny**, or **auto-remediate** non-compliant resources (e.g. "All resources must be tagged with 'cost-center'").\n\n3. **Resource Locks**: Prevent accidental changes to critical resources:\n   - **CanNotDelete**: Allows reads and updates but blocks deletion.\n   - **ReadOnly**: Blocks all writes (use with care — many management operations require writes).\n\n4. **Management Groups**: Organize subscriptions into a hierarchy above the subscription level. Policies applied at a Management Group cascade to all child subscriptions.`,
+        analogy: `Azure Policy is like a company HR policy: it applies the same rules to every department (subscription) from the top. Azure Advisor is your operations manager walking the floor and recommending efficiency improvements. Resource Locks are like a "Do Not Delete" label on critical server equipment — only authorized people with the right process can remove it.`,
+        followUp: `A company wants to prevent developers from creating VM sizes larger than D4s_v3 in any of its 20 subscriptions. What is the most efficient Azure governance tool to achieve this?`,
+        sources: retrieval.sources
+      };
+    }
+
+    // ---- Insufficient grounding fallback (explicit about uncertainty) ----
+    if (!retrieval.hasGroundedSupport) {
+      return {
+        mode: 'demo',
+        answer: `I wasn't able to find specific AZ-900 reference material in my knowledge base for **"${message}"**.\n\nThis topic may be covered in the official Microsoft Learn study guide. Here's how to look it up:\n\n1. Visit the [AZ-900 Study Guide on Microsoft Learn](https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/az-900).\n2. Use Ctrl+F to search for your keyword.\n3. Follow the linked module for an authoritative explanation.\n\nIf you believe this is an AZ-900 topic, try rephrasing your question with specific Azure service names or exam domain keywords.`,
+        sources: retrieval.sources
+      };
+    }
+
+    // ---- General AZ-900 grounded fallback (has some retrieval support) ----
     return {
       mode: 'demo',
-      answer: `### 🚀 Azure Fundamentals (AZ-900) Study Overview\n\nYou asked about: **"${message}"**.\n\nIn Microsoft Azure, this relates to core architectural and governance principles:\n\n1. **Core Concept**: Microsoft Azure organizes services across global Regions, Availability Zones (independent physical datacenters with separated power/cooling/networking), and Resource Groups.\n2. **Shared Responsibility**: Security and operational tasks are divided between Microsoft (security OF the cloud) and the customer (security IN the cloud).\n3. **Governance & Optimization**: Tools like Azure Policy, Resource Locks, and Azure Advisor ensure that your cloud workloads remain compliant, cost-efficient, and highly available.\n\n*Note: This explanation is grounded in the official Microsoft AZ-900 Skills Outline.*`,
-      analogy: `Think of an Azure Subscription like a family home: Resource Groups are individual rooms (kitchen, living room, office), Azure Policies are the house rules, and Azure Advisor is the smart assistant telling you how to save electricity and lock the front door!`,
-      followUp: `Would you like me to test you with a practice question or simplify this further?`,
+      answer: `### Azure Fundamentals: ${message.length < 60 ? message : 'Key Concept'}\n\nBased on the AZ-900 skills outline, this relates to Azure's core architectural and governance principles:\n\n1. **Scope & Hierarchy**: Azure organizes resources across Management Groups → Subscriptions → Resource Groups → Resources.\n2. **Shared Responsibility**: Security responsibilities are divided between Microsoft (securing the infrastructure) and the customer (securing their data and identities).\n3. **Well-Architected Framework**: Azure Advisor evaluates workloads against five pillars: Cost, Security, Reliability, Operational Excellence, and Performance.\n\nFor an authoritative answer grounded in the official skills outline, please enable a Gemini API key in your \`.env\` file or consult [Microsoft Learn](https://learn.microsoft.com/en-us/credentials/certifications/azure-fundamentals/).`,
+      analogy: `Think of Azure governance like a city: the city council (Management Groups) sets the regulations, different districts (Subscriptions) implement them, neighbourhoods (Resource Groups) group related buildings, and individual buildings are the resources.`,
+      followUp: `Would you like to test your understanding with a practice question, or should I try to explain this concept from a different angle?`,
       sources: retrieval.sources
     };
   }

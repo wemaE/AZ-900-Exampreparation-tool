@@ -125,7 +125,7 @@ class RagService {
         `[Source: ${chunk.sourceTitle} (${chunk.sourceType}) | Section: ${chunk.sectionTitle}]\n${chunk.content}`
       );
 
-      const sourceKey = `${chunk.sourceTitle}-${chunk.sectionTitle}`;
+      const sourceKey = chunk.sourceTitle;
       if (!seenSources.has(sourceKey)) {
         seenSources.add(sourceKey);
         sources.push({

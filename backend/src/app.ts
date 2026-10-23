@@ -11,9 +11,19 @@ export const app = express();
 
 // Security Middleware
 app.use(helmet());
+
+const configuredOrigins = config.frontendUrl
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+const allowedOrigins = Array.from(
+  new Set([...configuredOrigins, 'http://localhost:5173', 'http://127.0.0.1:5173'])
+);
+
 app.use(
   cors({
-    origin: [config.frontendUrl, 'http://localhost:5173', 'http://127.0.0.1:5173'],
+    origin: allowedOrigins,
     credentials: true
   })
 );

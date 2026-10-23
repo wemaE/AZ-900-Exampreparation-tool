@@ -1,0 +1,46 @@
+# render.yaml -- AzureAce Render Blueprint
+# Deploys backend (Express + RAG) as a Web Service and frontend (React/Vite) as a Static Site.
+
+services:
+  # -----------------------------------------------
+  # 1. BACKEND -- Express API + RAG + Gemini
+  # -----------------------------------------------
+  - type: web
+    name: azureace-backend
+    runtime: node
+    region: oregon
+    plan: free
+    rootDir: backend
+    buildCommand: npm ci && npm run build
+    startCommand: node dist/server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: FRONTEND_URL
+        value: https://azureace.onrender.com
+      - key: RATE_LIMIT_WINDOW_MS
+        value: "900000"
+      - key: RATE_LIMIT_MAX_REQUESTS
+        value: "100"
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+
+  # -----------------------------------------------
+  # 2. FRONTEND -- React/Vite Static Site
+  # -----------------------------------------------
+  - type: web
+    name: azureace
+    runtime: static
+    region: oregon
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_BASE_URL
+        value: https://azureace-backend.onrender.com

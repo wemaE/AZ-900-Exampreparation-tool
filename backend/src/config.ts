@@ -1,5 +1,6 @@
-import dotenv from 'dotenv';
+import fs from 'fs';
 import path from 'path';
+import dotenv from 'dotenv';
 
 // Load .env from backend or root directory
 dotenv.config();
@@ -13,7 +14,11 @@ export const config = {
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
   rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000', 10), // 15 mins
   rateLimitMaxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100', 10),
-  ragDocsPath: path.resolve(process.cwd(), '../rag')
+  ragDocsPath: process.env.RAG_DOCS_PATH
+    ? path.resolve(process.env.RAG_DOCS_PATH)
+    : fs.existsSync(path.resolve(process.cwd(), 'rag'))
+    ? path.resolve(process.cwd(), 'rag')
+    : path.resolve(process.cwd(), '../rag')
 };
 
 export const isLiveMode = Boolean(config.geminiApiKey && config.geminiApiKey.trim().length > 0 && config.geminiApiKey !== 'your_gemini_api_key_here');
