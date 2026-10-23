@@ -1,0 +1,27 @@
+{
+  "name": "azureace-az900-study-buddy",
+  "version": "1.0.0",
+  "description": "AzureAce — Grounded AI Study Buddy for Microsoft Azure Fundamentals (AZ-900)",
+  "private": true,
+  "scripts": {
+    "install:all": "npm --prefix backend install && npm --prefix frontend install",
+    "dev": "concurrently -n \"BACKEND,FRONTEND\" -c \"blue,green\" \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\"",
+    "build": "npm --prefix backend run build && npm --prefix frontend run build",
+    "test": "npm --prefix backend run test",
+    "ingest": "npm --prefix backend run ingest"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "keywords": [
+    "az-900",
+    "azure",
+    "ai-study-buddy",
+    "rag",
+    "gemini",
+    "react",
+    "express"
+  ],
+  "author": "wemaE",
+  "license": "MIT"
+}
